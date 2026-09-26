@@ -1,7 +1,7 @@
 --============================================================
 -- JADE_MAN_A AIRCRAFT CONTROL
 -- FULL MOBILE VERSION
--- VERSION v2.60.2
+-- VERSION v2.60.5
 --============================================================
 
 local Players = game:GetService("Players")
@@ -14,7 +14,7 @@ local Stats = game:GetService("Stats")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local VERSION = "v2.60.2"
+local VERSION = "v2.60.5"
 
 --============================================================
 -- SETTINGS
@@ -39,11 +39,13 @@ local LockStrength = 70
 
 local LockPart = "Head"
 
--- ALL = ทุกคน
--- SELECTED = เฉพาะรายชื่อที่เลือก
-local LockMode = "ALL"
+-- Target Lock:
+-- "All"      = ล็อกทุกคน
+-- "Selected" = ล็อกเฉพาะรายชื่อที่เลือก
+local LockMode = "All"
 
 local SelectedPlayers = {}
+local CurrentTarget = nil
 
 local OptimizerLevel = 0
 
@@ -99,12 +101,19 @@ local function SetupCharacter(character)
 	Character = character
 
 	Humanoid = character:WaitForChild("Humanoid",10)
-	RootPart = character:WaitForChild("HumanoidRootPart",10)
+
+	RootPart = character:WaitForChild(
+		"HumanoidRootPart",
+		10
+	)
 
 	if Humanoid then
 		OriginalWalkSpeed = Humanoid.WalkSpeed
-	end
 
+		if WalkEnabled then
+			Humanoid.WalkSpeed = WalkSpeed
+		end
+	end
 end
 
 if LocalPlayer.Character then
@@ -119,13 +128,19 @@ LocalPlayer.CharacterAdded:Connect(function(character)
 
 	SetupCharacter(character)
 
+	CurrentTarget = nil
+
+	if FlyEnabled then
+		task.wait(0.1)
+		StartFly()
+	end
 end)
 
 --============================================================
 -- GUI
 --============================================================
 
-local old = PlayerGui:FindFirstChild("JADE_MAN_A_v2602")
+local old = PlayerGui:FindFirstChild("JADE_MAN_A_v2605")
 
 if old then
 	old:Destroy()
@@ -133,7 +148,7 @@ end
 
 local Gui = Instance.new("ScreenGui")
 
-Gui.Name = "JADE_MAN_A_v2602"
+Gui.Name = "JADE_MAN_A_v2605"
 Gui.ResetOnSpawn = false
 Gui.IgnoreGuiInset = true
 Gui.DisplayOrder = 999
@@ -163,7 +178,6 @@ local function Border(object)
 	s.Parent = object
 
 	return s
-
 end
 
 local function MakeButton(parent,text,height)
@@ -183,7 +197,6 @@ local function MakeButton(parent,text,height)
 	Round(b,10)
 
 	return b
-
 end
 
 --============================================================
@@ -221,7 +234,7 @@ Round(OpenButton,12)
 local OpenBorder = Border(OpenButton)
 
 --============================================================
--- MINI INFO
+-- MINI FPS / PING
 --============================================================
 
 local MiniInfo = Instance.new("Frame")
@@ -266,7 +279,7 @@ Main.Size = UDim2.fromOffset(310,285)
 Main.Position = MiniHolder.Position
 Main.BackgroundColor3 = Background
 Main.BorderSizePixel = 0
-Main.Visible = true
+Main.Visible = false
 Main.ClipsDescendants = true
 Main.Parent = Gui
 
@@ -309,7 +322,7 @@ task.spawn(function()
 
 	end)
 
-	if ok then
+	if ok and image then
 		Avatar.Image = image
 	end
 
@@ -421,7 +434,7 @@ Back.Position = UDim2.fromOffset(7,7)
 
 local PageTitle = Instance.new("TextLabel")
 
-PageTitle.Size = UDim2.fromOffset(150,52)
+PageTitle.Size = UDim2.fromOffset(130,52)
 PageTitle.Position = UDim2.fromOffset(93,0)
 PageTitle.BackgroundTransparency = 1
 PageTitle.Text = "Feature"
@@ -468,7 +481,7 @@ PageLayout.Parent = PageScroll
 -- PAGE HELPERS
 --============================================================
 
-local CurrentToggle
+local CurrentToggle = nil
 
 local function ClearPage()
 
@@ -499,6 +512,11 @@ local function Info(text,height)
 	Round(label,10)
 
 	return label
+end
+
+local function PageButton(text)
+
+	return MakeButton(PageScroll,text,40)
 
 end
 
@@ -549,10 +567,13 @@ local function NumberBox(title,getter,setter,min,max)
 			return
 		end
 
-		value = math.clamp(math.floor(value),min,max)
+		value = math.clamp(
+			math.floor(value),
+			min,
+			max
+		)
 
 		setter(value)
-
 		box.Text = tostring(value)
 
 	end)
@@ -628,25 +649,29 @@ local function Stepper(title,getter,setter,min,max)
 
 	minus.Activated:Connect(function()
 
-		setter(math.clamp(getter()-1,min,max))
+		setter(math.clamp(
+			getter()-1,
+			min,
+			max
+		))
+
 		Update()
 
 	end)
 
 	plus.Activated:Connect(function()
 
-		setter(math.clamp(getter()+1,min,max))
+		setter(math.clamp(
+			getter()+1,
+			min,
+			max
+		))
+
 		Update()
 
 	end)
 
 	Update()
-
-end
-
-local function PageButton(text)
-
-	return MakeButton(PageScroll,text,40)
 
 end
 
@@ -695,6 +720,7 @@ local function OpenPage(title,getter,setter)
 	Page.Position = Main.Position
 	Page.Visible = true
 	Main.Visible = false
+	MiniHolder.Visible = false
 
 end
 
@@ -792,9 +818,15 @@ local function UpdateFly()
 	local move = Humanoid.MoveDirection
 
 	if move.Magnitude > 0 then
-		FlyVelocity.Velocity = move.Unit * FlySpeed
+
+		FlyVelocity.Velocity =
+			move.Unit * FlySpeed
+
 	else
-		FlyVelocity.Velocity = Vector3.zero
+
+		FlyVelocity.Velocity =
+			Vector3.zero
+
 	end
 
 	local look = camera.CFrame.LookVector
@@ -824,10 +856,13 @@ local XRayParts = {}
 
 local function ClearXRay()
 
-	for part,old in pairs(XRayParts) do
+	for part,oldTransparency in pairs(XRayParts) do
 
 		if part and part.Parent then
-			part.LocalTransparencyModifier = old
+
+			part.LocalTransparencyModifier =
+				oldTransparency
+
 		end
 
 	end
@@ -848,12 +883,14 @@ local function ApplyXRay()
 
 		if obj:IsA("BasePart") then
 
-			if not Character or not obj:IsDescendantOf(Character) then
+			if not Character or
+				not obj:IsDescendantOf(Character) then
 
 				XRayParts[obj] =
 					obj.LocalTransparencyModifier
 
-				obj.LocalTransparencyModifier = 0.55
+				obj.LocalTransparencyModifier =
+					0.55
 
 			end
 
@@ -870,8 +907,8 @@ end
 local TargetUI = Instance.new("Frame")
 
 TargetUI.Name = "TargetLockUI"
-TargetUI.Size = UDim2.fromOffset(120,105)
-TargetUI.Position = UDim2.new(0.5,-60,0.5,-52)
+TargetUI.Size = UDim2.fromOffset(130,105)
+TargetUI.Position = UDim2.new(0.5,-65,0.5,-52)
 TargetUI.BackgroundTransparency = 1
 TargetUI.Visible = false
 TargetUI.ZIndex = 100
@@ -880,7 +917,7 @@ TargetUI.Parent = Gui
 local TargetCircle = Instance.new("Frame")
 
 TargetCircle.Size = UDim2.fromOffset(54,54)
-TargetCircle.Position = UDim2.fromOffset(33,0)
+TargetCircle.Position = UDim2.fromOffset(38,0)
 TargetCircle.BackgroundTransparency = 1
 TargetCircle.BorderSizePixel = 0
 TargetCircle.Parent = TargetUI
@@ -895,7 +932,7 @@ CircleStroke.Parent = TargetCircle
 
 local TargetName = Instance.new("TextLabel")
 
-TargetName.Size = UDim2.fromOffset(120,22)
+TargetName.Size = UDim2.fromOffset(130,22)
 TargetName.Position = UDim2.fromOffset(0,58)
 TargetName.BackgroundTransparency = 1
 TargetName.Text = ""
@@ -907,7 +944,7 @@ TargetName.Parent = TargetUI
 
 local TargetUser = Instance.new("TextLabel")
 
-TargetUser.Size = UDim2.fromOffset(120,16)
+TargetUser.Size = UDim2.fromOffset(130,16)
 TargetUser.Position = UDim2.fromOffset(0,78)
 TargetUser.BackgroundTransparency = 1
 TargetUser.Text = ""
@@ -921,11 +958,9 @@ TargetUser.Parent = TargetUI
 -- TARGET LOCK
 --============================================================
 
-local CurrentTarget
-
 local function GetTargetPart(player)
 
-	if not player.Character then
+	if not player or not player.Character then
 		return nil
 	end
 
@@ -935,7 +970,9 @@ local function GetTargetPart(player)
 
 	end
 
-	return player.Character:FindFirstChild("HumanoidRootPart")
+	return player.Character:FindFirstChild(
+		"HumanoidRootPart"
+	)
 
 end
 
@@ -945,10 +982,40 @@ local function IsSelected(player)
 
 end
 
---============================================================
--- NEW 360° TARGET SEARCH
---============================================================
+local function ValidTarget(player)
 
+	if not player or player == LocalPlayer then
+		return false
+	end
+
+	if LockMode == "Selected" and
+		not IsSelected(player) then
+
+		return false
+	end
+
+	local char = player.Character
+
+	if not char then
+		return false
+	end
+
+	local hum = char:FindFirstChildOfClass("Humanoid")
+	local part = GetTargetPart(player)
+
+	if not hum or not part then
+		return false
+	end
+
+	if hum.Health <= 0 then
+		return false
+	end
+
+	return true
+end
+
+-- ตรวจจับรอบตัว 360 องศา
+-- ไม่ใช้มุมกล้องเป็นเงื่อนไข
 local function FindTarget()
 
 	if not RootPart then
@@ -960,39 +1027,19 @@ local function FindTarget()
 
 	for _,player in ipairs(Players:GetPlayers()) do
 
-		if player ~= LocalPlayer then
+		if ValidTarget(player) then
 
-			-- MODE 2
-			if LockMode == "SELECTED" and not IsSelected(player) then
-				continue
-			end
+			local part = GetTargetPart(player)
 
-			local character = player.Character
+			if part then
 
-			if character then
+				local distance =
+					(RootPart.Position - part.Position).Magnitude
 
-				local humanoid =
-					character:FindFirstChildOfClass("Humanoid")
+				if distance <= nearestDistance then
 
-				local targetPart =
-					GetTargetPart(player)
-
-				if humanoid
-					and targetPart
-					and humanoid.Health > 0 then
-
-					-- สำคัญ:
-					-- ไม่มีการเช็ก LookVector
-					-- จึงตรวจจับได้ 360 องศา
-					local distance =
-						(RootPart.Position - targetPart.Position).Magnitude
-
-					if distance <= nearestDistance then
-
-						nearestDistance = distance
-						nearest = player
-
-					end
+					nearestDistance = distance
+					nearest = player
 
 				end
 
@@ -1003,12 +1050,7 @@ local function FindTarget()
 	end
 
 	return nearest
-
 end
-
---============================================================
--- TARGET UI
---============================================================
 
 local function UpdateTargetUI()
 
@@ -1019,12 +1061,11 @@ local function UpdateTargetUI()
 		TargetUser.Text = ""
 
 		return
-
 	end
 
 	TargetUI.Visible = true
 
-	if CurrentTarget then
+	if CurrentTarget and ValidTarget(CurrentTarget) then
 
 		TargetName.Text =
 			CurrentTarget.DisplayName
@@ -1041,10 +1082,6 @@ local function UpdateTargetUI()
 
 end
 
---============================================================
--- TARGET LOCK UPDATE
---============================================================
-
 local function UpdateTargetLock()
 
 	if not LockEnabled then
@@ -1053,87 +1090,105 @@ local function UpdateTargetLock()
 
 		UpdateTargetUI()
 
-		if Humanoid then
-			Humanoid.AutoRotate = true
-		end
-
 		return
-
 	end
 
 	if not RootPart then
 		return
 	end
 
-	-- ถ้าเป็น SELECTED แต่คนปัจจุบันไม่ได้ถูกเลือก
+	-- เป้าหมายเดิมใช้ได้อยู่หรือไม่
 	if CurrentTarget then
 
-		if LockMode == "SELECTED"
-			and not IsSelected(CurrentTarget) then
-
+		if not ValidTarget(CurrentTarget) then
 			CurrentTarget = nil
+		else
+
+			local currentPart =
+				GetTargetPart(CurrentTarget)
+
+			if currentPart then
+
+				local currentDistance =
+					(
+						RootPart.Position -
+						currentPart.Position
+					).Magnitude
+
+				if currentDistance >
+					LockDistance then
+
+					CurrentTarget = nil
+
+				end
+
+			end
 
 		end
 
 	end
 
-	-- หาเป้าหมายใหม่
+	-- ถ้าไม่มีเป้าหมาย ให้หาใหม่
 	if not CurrentTarget then
+
 		CurrentTarget = FindTarget()
+
 	end
 
 	if not CurrentTarget then
 
 		UpdateTargetUI()
 		return
-
 	end
 
 	local targetPart =
 		GetTargetPart(CurrentTarget)
 
-	local targetHumanoid =
-		CurrentTarget.Character
-		and CurrentTarget.Character:
+	local targetHum =
+		CurrentTarget.Character and
+		CurrentTarget.Character:
 			FindFirstChildOfClass("Humanoid")
 
-	if not targetPart
-		or not targetHumanoid
-		or targetHumanoid.Health <= 0 then
+	if not targetPart or
+		not targetHum or
+		targetHum.Health <= 0 then
 
 		CurrentTarget = nil
 		UpdateTargetUI()
 		return
-
 	end
 
 	local distance =
-		(RootPart.Position - targetPart.Position).Magnitude
+		(
+			RootPart.Position -
+			targetPart.Position
+		).Magnitude
 
 	if distance > LockDistance then
 
 		CurrentTarget = FindTarget()
-
 		UpdateTargetUI()
 		return
 
 	end
 
-	local camera = Workspace.CurrentCamera
+	local alpha =
+		math.clamp(
+			LockStrength / 100,
+			0,
+			1
+		)
 
+	local camera =
+		Workspace.CurrentCamera
+
+	-- หมุนกล้องหาเป้าหมาย
 	if camera then
 
 		local desired =
 			CFrame.lookAt(
 				camera.CFrame.Position,
 				targetPart.Position
-			)
-
-		local alpha =
-			math.clamp(
-				LockStrength / 100,
-				0,
-				1
 			)
 
 		camera.CFrame =
@@ -1144,17 +1199,24 @@ local function UpdateTargetLock()
 
 	end
 
-	if Humanoid then
+	-- หมุนตัวละครในแนวราบ
+	if Humanoid and
+		RootPart then
 
 		Humanoid.AutoRotate = false
 
-		local flatTarget = Vector3.new(
-			targetPart.Position.X,
-			RootPart.Position.Y,
-			targetPart.Position.Z
-		)
+		local flatTarget =
+			Vector3.new(
+				targetPart.Position.X,
+				RootPart.Position.Y,
+				targetPart.Position.Z
+			)
 
-		if (flatTarget - RootPart.Position).Magnitude > 0.01 then
+		local flatDirection =
+			flatTarget -
+			RootPart.Position
+
+		if flatDirection.Magnitude > 0.01 then
 
 			RootPart.CFrame =
 				RootPart.CFrame:Lerp(
@@ -1162,11 +1224,7 @@ local function UpdateTargetLock()
 						RootPart.Position,
 						flatTarget
 					),
-					math.clamp(
-						LockStrength / 100,
-						0,
-						1
-					)
+					alpha
 				)
 
 		end
@@ -1227,7 +1285,10 @@ local function UpdateProximity()
 				if hum and hrp and hum.Health > 0 then
 
 					local distance =
-						(RootPart.Position - hrp.Position).Magnitude
+						(
+							RootPart.Position -
+							hrp.Position
+						).Magnitude
 
 					if distance <= PROXIMITY_DISTANCE then
 
@@ -1237,7 +1298,6 @@ local function UpdateProximity()
 								Instance.new("Highlight")
 
 							h.Adornee = char
-
 							h.DepthMode =
 								Enum.HighlightDepthMode.AlwaysOnTop
 
@@ -1261,7 +1321,8 @@ local function UpdateProximity()
 
 						end
 
-						Highlights[player].OutlineColor = Accent
+						Highlights[player].OutlineColor =
+							Accent
 
 					elseif Highlights[player] then
 
@@ -1281,7 +1342,7 @@ local function UpdateProximity()
 end
 
 --============================================================
--- AI
+-- AI ESCAPE
 --============================================================
 
 local function FindNearbyPlayer()
@@ -1310,7 +1371,10 @@ local function FindNearbyPlayer()
 				if hum and hrp and hum.Health > 0 then
 
 					local distance =
-						(RootPart.Position - hrp.Position).Magnitude
+						(
+							RootPart.Position -
+							hrp.Position
+						).Magnitude
 
 					if distance <= nearestDistance then
 
@@ -1328,7 +1392,6 @@ local function FindNearbyPlayer()
 	end
 
 	return nearest
-
 end
 
 local function UpdateAI()
@@ -1347,7 +1410,8 @@ local function UpdateAI()
 
 	local nearby = FindNearbyPlayer()
 
-	local lowHP = Humanoid.Health <= AIHP
+	local lowHP =
+		Humanoid.Health <= AIHP
 
 	if not nearby and not lowHP then
 		return
@@ -1358,12 +1422,15 @@ local function UpdateAI()
 	if nearby and nearby.Character then
 
 		local enemyRoot =
-			nearby.Character:FindFirstChild("HumanoidRootPart")
+			nearby.Character:FindFirstChild(
+				"HumanoidRootPart"
+			)
 
 		if enemyRoot then
 
 			local away =
-				RootPart.Position - enemyRoot.Position
+				RootPart.Position -
+				enemyRoot.Position
 
 			direction =
 				Vector3.new(
@@ -1382,7 +1449,8 @@ local function UpdateAI()
 
 	if direction.Magnitude <= 0 then
 
-		direction = -RootPart.CFrame.LookVector
+		direction =
+			-RootPart.CFrame.LookVector
 
 		direction =
 			Vector3.new(
@@ -1394,6 +1462,34 @@ local function UpdateAI()
 		if direction.Magnitude > 0 then
 			direction = direction.Unit
 		end
+
+	end
+
+	local params = RaycastParams.new()
+
+	params.FilterType =
+		Enum.RaycastFilterType.Exclude
+
+	params.FilterDescendantsInstances = {
+		Character
+	}
+
+	local result =
+		Workspace:Raycast(
+			RootPart.Position +
+				Vector3.new(0,1,0),
+			direction * 5,
+			params
+		)
+
+	if result then
+
+		direction =
+			Vector3.new(
+				-direction.Z,
+				0,
+				direction.X
+			)
 
 	end
 
@@ -1421,7 +1517,8 @@ RunService.RenderStepped:Connect(function()
 		FrameCount = 0
 		LastFPS = now
 
-		MiniFPS.Text = "FPS: "..FPS
+		MiniFPS.Text =
+			"FPS: "..FPS
 
 	end
 
@@ -1449,13 +1546,16 @@ task.spawn(function()
 			if value then
 
 				ping =
-					tostring(math.floor(value)).." ms"
+					tostring(
+						math.floor(value)
+					).." ms"
 
 			end
 
 		end)
 
-		MiniPing.Text = "Ping: "..ping
+		MiniPing.Text =
+			"Ping: "..ping
 
 		task.wait(1)
 
@@ -1467,20 +1567,29 @@ end)
 -- FPS OPTIMIZER
 --============================================================
 
-local OriginalShadows = Lighting.GlobalShadows
-local OriginalBrightness = Lighting.Brightness
-local OriginalExposure = Lighting.ExposureCompensation
+local OriginalShadows =
+	Lighting.GlobalShadows
+
+local OriginalBrightness =
+	Lighting.Brightness
+
+local OriginalExposure =
+	Lighting.ExposureCompensation
 
 local function ApplyOptimizer()
 
 	if not OptimizerEnabled then
 
-		Lighting.GlobalShadows = OriginalShadows
-		Lighting.Brightness = OriginalBrightness
-		Lighting.ExposureCompensation = OriginalExposure
+		Lighting.GlobalShadows =
+			OriginalShadows
+
+		Lighting.Brightness =
+			OriginalBrightness
+
+		Lighting.ExposureCompensation =
+			OriginalExposure
 
 		return
-
 	end
 
 	if OptimizerLevel >= 20 then
@@ -1491,14 +1600,16 @@ local function ApplyOptimizer()
 
 		Lighting.Brightness =
 			math.clamp(
-				OriginalBrightness + OptimizerLevel/100,
+				OriginalBrightness +
+				OptimizerLevel/100,
 				0,
 				10
 			)
 
 		Lighting.ExposureCompensation =
 			math.clamp(
-				OriginalExposure + OptimizerLevel/100,
+				OriginalExposure +
+				OptimizerLevel/100,
 				-2,
 				3
 			)
@@ -1515,15 +1626,32 @@ local function Menu(text)
 	return MakeButton(Scroll,text,44)
 end
 
-local FlyButton = Menu("✈️  Fly")
-local XRayButton = Menu("👁️  X-Ray")
-local WalkButton = Menu("🏃  Walk Speed")
-local AIButton = Menu("🤖  AI")
-local ProximityButton = Menu("📡  Proximity")
-local LockButton = Menu("🎯  Target Lock")
-local FPSButton = Menu("⚡  FPS Optimizer")
-local PerformanceButton = Menu("📊  Performance")
-local SettingsButton = Menu("⚙️  Settings")
+local FlyButton =
+	Menu("✈️  Fly")
+
+local XRayButton =
+	Menu("👁️  X-Ray")
+
+local WalkButton =
+	Menu("🏃  Walk Speed")
+
+local AIButton =
+	Menu("🤖  AI")
+
+local ProximityButton =
+	Menu("📡  Proximity")
+
+local LockButton =
+	Menu("🎯  Target Lock")
+
+local FPSButton =
+	Menu("⚡  FPS Optimizer")
+
+local PerformanceButton =
+	Menu("📊  Performance")
+
+local SettingsButton =
+	Menu("⚙️  Settings")
 
 --============================================================
 -- FLY PAGE
@@ -1683,8 +1811,13 @@ AIButton.Activated:Connect(function()
 	)
 
 	Info(
-		"เมื่อเลือดต่ำหรือมีผู้เล่นเข้ามาใกล้ AI จะพยายามเดินหลบ",
+		"เมื่อเลือดต่ำกว่าค่าที่กำหนด หรือมีผู้เล่นเข้ามาใกล้ AI จะพยายามเดินหลบ",
 		58
+	)
+
+	Info(
+		"ถ้ามีบล็อกอยู่ด้านหน้า AI จะพยายามเปลี่ยนทิศทาง",
+		50
 	)
 
 end)
@@ -1722,7 +1855,7 @@ end)
 -- TARGET LOCK PAGE
 --============================================================
 
-LockButton.Activated:Connect(function()
+local function BuildTargetLockPage()
 
 	OpenPage(
 		"🎯 Target Lock",
@@ -1738,10 +1871,6 @@ LockButton.Activated:Connect(function()
 				CurrentTarget = nil
 				UpdateTargetUI()
 
-				if Humanoid then
-					Humanoid.AutoRotate = true
-				end
-
 			end
 
 		end
@@ -1752,12 +1881,15 @@ LockButton.Activated:Connect(function()
 	--========================================================
 
 	Info(
-		"ตำแหน่งล็อกเป้า",
+		"ตำแหน่งเป้าหมาย",
 		35
 	)
 
-	local headButton = PageButton("🔴 Head")
-	local bodyButton = PageButton("🟢 Body")
+	local headButton =
+		PageButton("🔴 Head")
+
+	local bodyButton =
+		PageButton("🟢 Body")
 
 	local partInfo =
 		Info(
@@ -1765,37 +1897,44 @@ LockButton.Activated:Connect(function()
 			35
 		)
 
+	local function UpdatePartInfo()
+		partInfo.Text =
+			"กำลังล็อก: "..LockPart
+	end
+
 	headButton.Activated:Connect(function()
 
 		LockPart = "Head"
-		partInfo.Text = "กำลังล็อก: Head"
+		CurrentTarget = nil
+		UpdatePartInfo()
 
 	end)
 
 	bodyButton.Activated:Connect(function()
 
 		LockPart = "Body"
-		partInfo.Text = "กำลังล็อก: Body"
+		CurrentTarget = nil
+		UpdatePartInfo()
 
 	end)
 
 	--========================================================
-	-- MODE 1 / MODE 2
+	-- MODE
 	--========================================================
 
 	Info(
-		"โหมดเป้าหมาย",
+		"โหมดล็อกเป้า",
 		35
 	)
 
 	local allButton =
 		PageButton(
-			"👥 1. ล็อกเป้าทุกคน"
+			"👥 โหมด 1 — ล็อกทุกคน"
 		)
 
 	local selectedButton =
 		PageButton(
-			"👤 2. เลือกผู้เล่น"
+			"👤 โหมด 2 — เลือกรายชื่อ"
 		)
 
 	local modeInfo =
@@ -1806,23 +1945,21 @@ LockButton.Activated:Connect(function()
 
 	allButton.Activated:Connect(function()
 
-		LockMode = "ALL"
-
+		LockMode = "All"
 		CurrentTarget = nil
 
 		modeInfo.Text =
-			"โหมดปัจจุบัน: ALL PLAYERS"
+			"โหมดปัจจุบัน: All Players"
 
 	end)
 
 	selectedButton.Activated:Connect(function()
 
-		LockMode = "SELECTED"
-
+		LockMode = "Selected"
 		CurrentTarget = nil
 
 		modeInfo.Text =
-			"โหมดปัจจุบัน: SELECTED PLAYERS"
+			"โหมดปัจจุบัน: Selected Players"
 
 	end)
 
@@ -1831,28 +1968,44 @@ LockButton.Activated:Connect(function()
 	--========================================================
 
 	Info(
-		"รายชื่อผู้เล่น — กด ON เพื่อเลือกเป้าหมาย",
-		40
+		"รายชื่อผู้เล่น — กด ON เพื่อเพิ่มเข้าเป้าหมาย",
+		45
 	)
+
+	local playerCount = 0
 
 	for _,player in ipairs(Players:GetPlayers()) do
 
 		if player ~= LocalPlayer then
 
-			local row = Instance.new("Frame")
+			playerCount += 1
 
-			row.Size = UDim2.new(1,-8,0,52)
-			row.BackgroundColor3 = Panel
+			local row =
+				Instance.new("Frame")
+
+			row.Size =
+				UDim2.new(1,-8,0,52)
+
+			row.BackgroundColor3 =
+				Panel
+
 			row.BorderSizePixel = 0
 			row.Parent = PageScroll
 
 			Round(row,10)
 
-			local image = Instance.new("ImageLabel")
+			local image =
+				Instance.new("ImageLabel")
 
-			image.Size = UDim2.fromOffset(38,38)
-			image.Position = UDim2.fromOffset(6,7)
-			image.BackgroundColor3 = Button
+			image.Size =
+				UDim2.fromOffset(38,38)
+
+			image.Position =
+				UDim2.fromOffset(6,7)
+
+			image.BackgroundColor3 =
+				Button
+
 			image.BorderSizePixel = 0
 			image.Parent = row
 
@@ -1860,55 +2013,88 @@ LockButton.Activated:Connect(function()
 
 			task.spawn(function()
 
-				local ok,url = pcall(function()
+				local ok,url =
+					pcall(function()
 
-					return Players:GetUserThumbnailAsync(
-						player.UserId,
-						Enum.ThumbnailType.HeadShot,
-						Enum.ThumbnailSize.Size100x100
-					)
+						return Players:GetUserThumbnailAsync(
+							player.UserId,
+							Enum.ThumbnailType.HeadShot,
+							Enum.ThumbnailSize.Size100x100
+						)
 
-				end)
+					end)
 
-				if ok then
+				if ok and url then
 					image.Image = url
 				end
 
 			end)
 
-			local display = Instance.new("TextLabel")
+			local display =
+				Instance.new("TextLabel")
 
-			display.Size = UDim2.new(1,-105,0,22)
-			display.Position = UDim2.fromOffset(52,4)
+			display.Size =
+				UDim2.new(1,-105,0,22)
+
+			display.Position =
+				UDim2.fromOffset(52,4)
+
 			display.BackgroundTransparency = 1
-			display.Text = player.DisplayName
-			display.TextColor3 = White
+			display.Text =
+				player.DisplayName
+
+			display.TextColor3 =
+				White
+
 			display.TextSize = 12
-			display.Font = Enum.Font.GothamBold
-			display.TextXAlignment = Enum.TextXAlignment.Left
+			display.Font =
+				Enum.Font.GothamBold
+
+			display.TextXAlignment =
+				Enum.TextXAlignment.Left
+
 			display.Parent = row
 
-			local username = Instance.new("TextLabel")
+			local username =
+				Instance.new("TextLabel")
 
-			username.Size = UDim2.new(1,-105,0,18)
-			username.Position = UDim2.fromOffset(52,26)
+			username.Size =
+				UDim2.new(1,-105,0,18)
+
+			username.Position =
+				UDim2.fromOffset(52,26)
+
 			username.BackgroundTransparency = 1
-			username.Text = "@"..player.Name
-			username.TextColor3 = Gray
+			username.Text =
+				"@"..player.Name
+
+			username.TextColor3 =
+				Gray
+
 			username.TextSize = 9
-			username.Font = Enum.Font.Gotham
-			username.TextXAlignment = Enum.TextXAlignment.Left
+			username.Font =
+				Enum.Font.Gotham
+
+			username.TextXAlignment =
+				Enum.TextXAlignment.Left
+
 			username.Parent = row
 
 			local selectButton =
 				Instance.new("TextButton")
 
-			selectButton.Size = UDim2.fromOffset(42,32)
-			selectButton.Position = UDim2.new(1,-48,0,10)
+			selectButton.Size =
+				UDim2.fromOffset(42,32)
+
+			selectButton.Position =
+				UDim2.new(1,-48,0,10)
+
 			selectButton.BorderSizePixel = 0
 			selectButton.TextColor3 = White
 			selectButton.TextSize = 10
-			selectButton.Font = Enum.Font.GothamBold
+			selectButton.Font =
+				Enum.Font.GothamBold
+
 			selectButton.Parent = row
 
 			Round(selectButton,8)
@@ -1918,12 +2104,16 @@ LockButton.Activated:Connect(function()
 				if SelectedPlayers[player] then
 
 					selectButton.Text = "ON"
-					selectButton.BackgroundColor3 = Theme
+
+					selectButton.BackgroundColor3 =
+						Theme
 
 				else
 
 					selectButton.Text = "OFF"
-					selectButton.BackgroundColor3 = Red
+
+					selectButton.BackgroundColor3 =
+						Red
 
 				end
 
@@ -1934,14 +2124,15 @@ LockButton.Activated:Connect(function()
 				SelectedPlayers[player] =
 					not SelectedPlayers[player]
 
-				UpdateSelected()
-
-				if CurrentTarget == player
-					and not SelectedPlayers[player] then
+				-- ถ้าเอาคนที่กำลังล็อกออก
+				if CurrentTarget == player and
+					not SelectedPlayers[player] then
 
 					CurrentTarget = nil
 
 				end
+
+				UpdateSelected()
 
 			end)
 
@@ -1951,8 +2142,17 @@ LockButton.Activated:Connect(function()
 
 	end
 
+	if playerCount == 0 then
+
+		Info(
+			"ยังไม่มีผู้เล่นคนอื่นในเซิร์ฟเวอร์",
+			42
+		)
+
+	end
+
 	--========================================================
-	-- DISTANCE
+	-- SETTINGS
 	--========================================================
 
 	Stepper(
@@ -1961,15 +2161,33 @@ LockButton.Activated:Connect(function()
 			return LockDistance
 		end,
 		function(value)
+
 			LockDistance = value
+
+			if CurrentTarget then
+
+				local part =
+					GetTargetPart(CurrentTarget)
+
+				if part and RootPart then
+
+					if (
+						RootPart.Position -
+						part.Position
+					).Magnitude > LockDistance then
+
+						CurrentTarget = nil
+
+					end
+
+				end
+
+			end
+
 		end,
 		MIN_LOCK_DISTANCE,
 		MAX_LOCK_DISTANCE
 	)
-
-	--========================================================
-	-- STRENGTH
-	--========================================================
 
 	Stepper(
 		"Lock Strength",
@@ -1984,24 +2202,18 @@ LockButton.Activated:Connect(function()
 	)
 
 	Info(
-		"ระบบค้นหาเป้าหมายรอบตัว 360° ทั้งด้านหน้า ด้านหลัง และด้านข้าง",
-		55
+		"ระบบตรวจจับเป้าหมายรอบตัว 360° ทั้งด้านหน้า ด้านหลัง และด้านข้าง โดยไม่จำเป็นต้องหันกล้องไปหาเป้าหมายก่อน",
+		65
 	)
 
-	Info(
-		"โหมด 1 = เลือกเป้าหมายจากผู้เล่นทั้งหมดที่อยู่ในระยะ",
-		48
-	)
+end
 
-	Info(
-		"โหมด 2 = เลือก ON เฉพาะรายชื่อที่ต้องการ แล้วระบบจะล็อกเฉพาะคนเหล่านั้น",
-		58
-	)
-
+LockButton.Activated:Connect(function()
+	BuildTargetLockPage()
 end)
 
 --============================================================
--- FPS PAGE
+-- FPS OPTIMIZER PAGE
 --============================================================
 
 FPSButton.Activated:Connect(function()
@@ -2066,10 +2278,11 @@ PerformanceButton.Activated:Connect(function()
 
 	task.spawn(function()
 
-		while Page.Visible
-			and PageTitle.Text == "📊 Performance" do
+		while Page.Visible and
+			PageTitle.Text == "📊 Performance" do
 
-			fpsLabel.Text = "FPS: "..FPS
+			fpsLabel.Text =
+				"FPS: "..FPS
 
 			task.wait(1)
 
@@ -2094,7 +2307,6 @@ local function ApplyTheme()
 	end
 
 	VersionLabel.TextColor3 = Accent
-
 	MiniFPS.TextColor3 = Theme
 	MiniPing.TextColor3 = Theme
 
@@ -2241,10 +2453,9 @@ end)
 Back.Activated:Connect(function()
 
 	Page.Visible = false
-
 	Main.Position = MiniHolder.Position
-
 	Main.Visible = true
+	MiniHolder.Visible = false
 
 end)
 
@@ -2279,7 +2490,6 @@ OpenButton.Activated:Connect(function()
 	end
 
 	Main.Position = MiniHolder.Position
-
 	Main.Visible = true
 	MiniHolder.Visible = false
 
@@ -2287,8 +2497,11 @@ end)
 
 OpenButton.InputBegan:Connect(function(input)
 
-	if input.UserInputType == Enum.UserInputType.Touch
-		or input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if input.UserInputType ==
+		Enum.UserInputType.Touch
+		or
+		input.UserInputType ==
+		Enum.UserInputType.MouseButton1 then
 
 		Dragging = true
 		WasDragged = false
@@ -2306,8 +2519,10 @@ UserInputService.InputChanged:Connect(function(input)
 		return
 	end
 
-	if input.UserInputType ~= Enum.UserInputType.Touch
-		and input.UserInputType ~= Enum.UserInputType.MouseMovement then
+	if input.UserInputType ~=
+		Enum.UserInputType.Touch
+		and input.UserInputType ~=
+		Enum.UserInputType.MouseMovement then
 
 		return
 
@@ -2320,13 +2535,15 @@ UserInputService.InputChanged:Connect(function(input)
 		WasDragged = true
 	end
 
-	local camera = Workspace.CurrentCamera
+	local camera =
+		Workspace.CurrentCamera
 
 	if not camera then
 		return
 	end
 
-	local viewport = camera.ViewportSize
+	local viewport =
+		camera.ViewportSize
 
 	local x =
 		StartPosition.X.Offset + delta.X
@@ -2337,13 +2554,15 @@ UserInputService.InputChanged:Connect(function(input)
 	local maxX =
 		math.max(
 			0,
-			viewport.X - MiniHolder.AbsoluteSize.X
+			viewport.X -
+			MiniHolder.AbsoluteSize.X
 		)
 
 	local maxY =
 		math.max(
 			0,
-			viewport.Y - MiniHolder.AbsoluteSize.Y
+			viewport.Y -
+			MiniHolder.AbsoluteSize.Y
 		)
 
 	x = math.clamp(x,0,maxX)
@@ -2356,8 +2575,11 @@ end)
 
 UserInputService.InputEnded:Connect(function(input)
 
-	if input.UserInputType == Enum.UserInputType.Touch
-		or input.UserInputType == Enum.UserInputType.MouseButton1 then
+	if input.UserInputType ==
+		Enum.UserInputType.Touch
+		or
+		input.UserInputType ==
+		Enum.UserInputType.MouseButton1 then
 
 		Dragging = false
 
@@ -2379,13 +2601,18 @@ RunService.RenderStepped:Connect(function()
 
 		pcall(function()
 
-			Humanoid.WalkSpeed = WalkSpeed
+			Humanoid.WalkSpeed =
+				WalkSpeed
 
 		end)
 
 	end
 
 end)
+
+--============================================================
+-- PROXIMITY LOOP
+--============================================================
 
 task.spawn(function()
 
@@ -2398,6 +2625,10 @@ task.spawn(function()
 	end
 
 end)
+
+--============================================================
+-- XRAY LOOP
+--============================================================
 
 task.spawn(function()
 
@@ -2424,7 +2655,6 @@ Players.PlayerRemoving:Connect(function(player)
 	if CurrentTarget == player then
 
 		CurrentTarget = nil
-
 		UpdateTargetUI()
 
 	end
@@ -2439,12 +2669,23 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 --============================================================
+-- PLAYER JOIN
+--============================================================
+
+Players.PlayerAdded:Connect(function(player)
+
+	-- รายชื่อจะถูกสร้างใหม่เมื่อเปิดหน้า Target Lock
+	-- จึงรองรับผู้เล่นที่เข้ามาหลังจากเปิดเกมแล้ว
+end)
+
+--============================================================
 -- INITIALIZE
 --============================================================
 
 ApplyTheme()
 
-Main.Position = MiniHolder.Position
+Main.Position =
+	MiniHolder.Position
 
 Main.Visible = true
 MiniHolder.Visible = false
